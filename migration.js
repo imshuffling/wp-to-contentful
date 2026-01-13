@@ -328,8 +328,8 @@ function mapData() {
       authorName: getAuthorName(postData.author), // Get author name from ID
       seoTitle: postData.yoast_head_json?.title || postData.title.rendered,
       seoDescription: postData.yoast_head_json?.description || '',
-      // tags: getPostLabels(postData.tags, 'tags'),
-      categories: getPostLabels(postData.categories, 'categories'),
+      tags: [...(postData.tags || []), ...(postData.categories || [])], // Combine tag and category IDs for Contentful tags
+      categories: postData.categories || [], // Store category IDs separately for reference
       contentImages: getPostBodyImages(postData),
     };
 
@@ -670,6 +670,102 @@ async function createContentfulAuthors(environment, assets) {
   // Store authors globally for use in posts
   contentfulData.authors = authors;
 
+  // Now create tags, then posts
+  createContentfulTags(environment, assets);
+}
+
+/**
+ * Create Contentful tag entries from WordPress tags
+ * @param {String} environment - Contentful Environment
+ * @param {Array} assets - Array of assets (to pass to post creation)
+ */
+async function createContentfulTags(environment, assets) {
+  console.log(logSeparator);
+  console.log(
+    `Creating Contentful Tags (from WordPress tags and categories)...`
+  );
+  console.log(logSeparator);
+
+  // Get all unique tag IDs from posts (now includes both tags and categories)
+  const allTagIds = wpData.posts.flatMap((post) => post.tags);
+  const uniqueTagIds = [...new Set(allTagIds)];
+  const tags = [];
+
+  console.log(`Found ${uniqueTagIds.length} unique tags/categories to create`);
+
+  // Get WordPress tag and category data from API
+  const wpTags = getApiDataType('tags')[0];
+  const wpCategories = getApiDataType('categories')[0];
+
+  if ((!wpTags || !wpTags.data) && (!wpCategories || !wpCategories.data)) {
+    console.warn(
+      '⚠ No WordPress tag or category data available, skipping tag creation'
+    );
+    contentfulData.tags = [];
+    createContentfulPosts(environment, assets);
+    return;
+  }
+
+  for (const tagId of uniqueTagIds) {
+    // Find the tag name from WordPress data (check both tags and categories)
+    let wpItem = null;
+    let itemType = '';
+
+    if (wpTags && wpTags.data) {
+      wpItem = wpTags.data.find((tag) => tag.id === tagId);
+      if (wpItem) itemType = 'tag';
+    }
+
+    if (!wpItem && wpCategories && wpCategories.data) {
+      wpItem = wpCategories.data.find((cat) => cat.id === tagId);
+      if (wpItem) itemType = 'category';
+    }
+
+    if (!wpItem || !wpItem.name) {
+      console.warn(`⚠ Skipping item with ID ${tagId} - no name found`);
+      continue;
+    }
+
+    const tagName = wpItem.name;
+
+    try {
+      console.log(`Creating tag from WordPress ${itemType}: ${tagName}`);
+
+      const tagEntry = await environment.createEntry('tag', {
+        fields: {
+          name: {
+            'en-GB': tagName,
+          },
+        },
+      });
+
+      console.log(`  Created draft tag: ${tagName}`);
+
+      // Publish the tag
+      const publishedTag = await tagEntry.publish();
+      console.log(`  ✓ Published tag: ${tagName} (from ${itemType})`);
+
+      tags.push({
+        tagId: tagId,
+        tagName: tagName,
+        contentfulId: publishedTag.sys.id,
+      });
+
+      // Small delay to avoid rate limiting
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    } catch (error) {
+      console.error(`❌ Error creating tag ${tagName}: ${error.message}`);
+    }
+  }
+
+  console.log(
+    `Successfully created ${tags.length} tags (combined from WordPress tags and categories)`
+  );
+  console.log(logSeparator);
+
+  // Store tags globally for use in posts
+  contentfulData.tags = tags;
+
   // Now create posts
   createContentfulPosts(environment, assets);
 }
@@ -912,6 +1008,8 @@ async function createContentfulPosts(environment, assets) {
         'contentImages',
         'authorId',
         'authorName',
+        'tags', // We handle tags separately with custom linking logic
+        'categories', // Categories are now combined with tags
       ];
 
       if (!keysToSkip.includes(postKey)) {
@@ -941,6 +1039,37 @@ async function createContentfulPosts(environment, assets) {
           console.warn(
             `⚠ Could not find Contentful author for ID: ${postValue}`
           );
+        }
+      }
+
+      // Link tags as references to tag entries
+      if (
+        postKey === 'tags' &&
+        Array.isArray(postValue) &&
+        postValue.length > 0 &&
+        contentfulData.tags
+      ) {
+        const linkedTags = [];
+
+        for (const tagId of postValue) {
+          const tagData = contentfulData.tags.find((t) => t.tagId === tagId);
+
+          if (tagData) {
+            linkedTags.push({
+              sys: {
+                type: 'Link',
+                linkType: 'Entry',
+                id: tagData.contentfulId,
+              },
+            });
+          }
+        }
+
+        if (linkedTags.length > 0) {
+          postFields.tags = {
+            'en-GB': linkedTags,
+          };
+          console.log(`✓ Linked ${linkedTags.length} tags`);
         }
       }
 
