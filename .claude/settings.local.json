@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node migration.js:*)",
+      "Bash(pkill:*)",
+      "Bash(npm install:*)"
+    ]
+  }
+}

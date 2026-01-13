@@ -1,0 +1,14 @@
+.DS_Store
+node_modules
+wpPosts.json
+posts.json
+contentful-config.js
+
+# Environment variables (contains sensitive credentials)
+.env
+
+# Temporary image directory
+temp_images/
+
+# Log files
+*.log
