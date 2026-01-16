@@ -21,7 +21,7 @@ if (!fs.existsSync(TEMP_IMAGE_DIR)) {
  * TEST MODE: Set to a number to limit how many posts to process (e.g., 2 for testing)
  * Set to null or 0 to process ALL posts
  */
-const TEST_LIMIT = 12; // Change this to null when you want to do the full import
+const TEST_LIMIT = 50; // Change this to null when you want to do the full import
 
 /**
  * Main WordPress endpoint - loaded from environment variables

@@ -12,3 +12,7 @@ temp_images/
 
 # Log files
 *.log
+
+# Comment export files
+comments-disqus.xml
+comments-backup.json
